@@ -14,7 +14,7 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::config::MAX_APP_NUM;
+use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM, SYSCALL_HASH};
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
 use lazy_static::*;
@@ -45,6 +45,7 @@ pub struct TaskManagerInner {
     tasks: [TaskControlBlock; MAX_APP_NUM],
     /// id of current `Running` task
     current_task: usize,
+    sys_count_count: [isize; MAX_SYSCALL_NUM],
 }
 
 lazy_static! {
@@ -65,6 +66,7 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    sys_count_count: [0;MAX_SYSCALL_NUM],
                 })
             },
         }
@@ -88,6 +90,16 @@ impl TaskManager {
             __switch(&mut _unused as *mut TaskContext, next_task_cx_ptr);
         }
         panic!("unreachable in run_first_task!");
+    }
+
+    fn read_sys_call_counter(&self, id: usize) -> isize {
+        let inner = self.inner.exclusive_access();
+        inner.sys_count_count[id % SYSCALL_HASH]
+    }
+
+    fn plus_sys_call_counter(&self, id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        inner.sys_count_count[id % SYSCALL_HASH] += 1;
     }
 
     /// Change the status of current `Running` task into `Ready`.
@@ -125,6 +137,9 @@ impl TaskManager {
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
+
+            inner.sys_count_count = [0; MAX_SYSCALL_NUM];
+
             drop(inner);
             // before this, we should drop local variables that must be dropped manually
             unsafe {
@@ -135,6 +150,16 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+}
+
+/// read sys_call number
+pub fn read_sys_call_counter(id: usize) -> isize {
+    TASK_MANAGER.read_sys_call_counter(id)
+}
+
+/// plus sys_call number
+pub fn plus_sys_call_counter(id: usize) {
+    TASK_MANAGER.plus_sys_call_counter(id);
 }
 
 /// Run the first task in task list.
