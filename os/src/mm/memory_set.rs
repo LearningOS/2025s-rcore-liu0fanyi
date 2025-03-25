@@ -51,6 +51,90 @@ impl MemorySet {
     pub fn token(&self) -> usize {
         self.page_table.token()
     }
+
+    /// munmap
+    pub fn munmap(&mut self, start: usize, len: usize) -> Result<(), &'static str> {
+        // let length = align_of(PAGH_SIZE);
+        if !Self::is_page_aligned(start) {
+            return Err("need addr aligned pagesize");
+        }
+
+        let end = start + len;
+
+        let start = VirtAddr::from(start);
+        let end = VirtAddr::from(end);
+
+        if let Some(index) = self.areas.iter().position(|area| {
+            area.vpn_range.get_start() <= start.floor() && area.vpn_range.get_end() >= end.ceil()
+        }) {
+            self.areas[index].unmap(&mut self.page_table);
+            self.areas.remove(index);
+            return Ok(());
+        }
+
+        Err("range not found")
+    }
+
+    /// mmp
+    pub fn mmap(
+        &mut self,
+        start: usize,
+        len: usize,
+        prot: usize,
+    ) -> Result<VirtAddr, &'static str> {
+        // let length = align_of(PAGH_SIZE);
+        //
+        println!("in start:{:x}, len:{:x}", start, len);
+        if !Self::is_page_aligned(start) {
+            return Err("need addr aligned pagesize");
+        }
+
+        if (prot & !0x7 != 0) || (prot & 0x7 == 0) {
+            return Err("prot not valid");
+        }
+        let end = start + len;
+
+        let start = VirtAddr::from(start);
+        let end = VirtAddr::from(end);
+
+        if self.areas.iter().any(|area| {
+            // println!(
+            //     "vpn_rang:{:?}-{:?}, start:{:?}, end:{:?}",
+            //     area.vpn_range.get_start(),
+            //     area.vpn_range.get_end(),
+            //     start,
+            //     end
+            // );
+            area.vpn_range.get_start() <= end.floor() && area.vpn_range.get_end() > start.floor()
+        }) {
+            return Err("page map has exist");
+        }
+        let mut permission = MapPermission::empty();
+        permission |= MapPermission::U;
+        if prot & 0x1 != 0 {
+            permission |= MapPermission::R;
+        }
+
+        if prot & 0x2 != 0 {
+            permission |= MapPermission::W;
+        }
+
+        if prot & 0x4 != 0 {
+            permission |= MapPermission::X;
+        }
+
+        // self.insert_framed_area(start, end, MapPermission::from_bits_truncate(prot as u8));
+        self.insert_framed_area(start, end, permission);
+
+        // self.activate();
+
+        Ok(start)
+    }
+
+    fn is_page_aligned(addr: usize) -> bool {
+        addr & (PAGE_SIZE - 1) == 0
+    }
+
     /// Assume that no conflicts.
     pub fn insert_framed_area(
         &mut self,
@@ -58,6 +142,10 @@ impl MemorySet {
         end_va: VirtAddr,
         permission: MapPermission,
     ) {
+        println!(
+            "start:{:?}, end:{:?}, permission:{:?}",
+            start_va, end_va, permission
+        );
         self.push(
             MapArea::new(start_va, end_va, MapType::Framed, permission),
             None,

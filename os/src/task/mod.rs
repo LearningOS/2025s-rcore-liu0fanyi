@@ -14,6 +14,7 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+// use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
@@ -46,6 +47,7 @@ struct TaskManagerInner {
     tasks: Vec<TaskControlBlock>,
     /// id of current `Running` task
     current_task: usize,
+    // sys_call_counter: [isize; MAX_SYSCALL_NUM],
 }
 
 lazy_static! {
@@ -64,6 +66,7 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    // sys_call_counter: [0;MAX_SYSCALL_NUM]
                 })
             },
         }
@@ -126,6 +129,20 @@ impl TaskManager {
         inner.tasks[inner.current_task].get_trap_cx()
     }
 
+    /// mmap
+    fn mmap(&self, start: usize, len: usize, prot: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.tasks[cur].mmp(start, len, prot)
+    }
+
+    /// munmap
+    fn munmap(&self, start: usize, len: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.tasks[cur].munmap(start, len)
+    }
+
     /// Change the current 'Running' task's program break
     pub fn change_current_program_brk(&self, size: i32) -> Option<usize> {
         let mut inner = self.inner.exclusive_access();
@@ -153,6 +170,40 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    fn read_sys_call_counter(&self, id: usize) -> isize {
+        let inner = self.inner.exclusive_access();
+        // inner.sys_call_counter[id]
+        let cur = inner.current_task;
+        inner.tasks[cur].sys_call_counter[id]
+    }
+
+    fn plus_sys_call_counter(&self, id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.tasks[cur].sys_call_counter[id] += 1;
+        // inner.sys_call_counter[id] += 1;
+    }
+}
+
+/// read sys_call number
+pub fn read_sys_call_counter(id: usize) -> isize {
+    TASK_MANAGER.read_sys_call_counter(id)
+}
+
+/// plus sys_call number
+pub fn plus_sys_call_counter(id: usize) {
+    TASK_MANAGER.plus_sys_call_counter(id);
+}
+
+/// mmp
+pub fn mmap(start: usize, len: usize, prot: usize) -> isize {
+    TASK_MANAGER.mmap(start, len, prot)
+}
+
+/// munmap
+pub fn munmap(start: usize, len: usize) -> isize {
+    TASK_MANAGER.munmap(start, len)
 }
 
 /// Run the first task in task list.

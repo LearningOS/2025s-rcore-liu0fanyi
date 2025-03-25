@@ -1,6 +1,6 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
-use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
+use super::{frame_alloc, FrameTracker, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
@@ -57,6 +57,10 @@ impl PageTableEntry {
     /// The page pointered by page table entry is valid?
     pub fn is_valid(&self) -> bool {
         (self.flags() & PTEFlags::V) != PTEFlags::empty()
+    }
+    /// The page pointered by page table entry is user?
+    pub fn is_user(&self) -> bool {
+        (self.flags() & PTEFlags::U) != PTEFlags::empty()
     }
     /// The page pointered by page table entry is readable?
     pub fn readable(&self) -> bool {
@@ -178,4 +182,38 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
         start = end_va.into();
     }
     v
+}
+
+/// Translate const u8 to
+pub fn translated<T>(token: usize, ptr: usize, rd: usize) -> Option<&'static mut T> {
+    let page_table = PageTable::from_token(token);
+
+    let va = VirtAddr::from(ptr as usize);
+    let vpn = va.floor();
+    let Some(pte) = page_table.translate(vpn) else {
+        return None;
+    };
+
+    // println!(
+    //     "pte:{}{}{}{}",
+    //     pte.is_user(),
+    //     pte.is_valid(),
+    //     pte.readable(),
+    //     pte.writable()
+    // );
+
+    if !pte.is_valid()
+        || !pte.is_user()
+        || (rd == 0 && (!pte.readable()))
+        || (rd == 1 && (!pte.writable()))
+    {
+        return None;
+    }
+
+    let ppn = pte.ppn();
+    // vpn.step();
+
+    let phys_addr = PhysAddr::from(PhysAddr::from(ppn).0 + va.page_offset());
+
+    Some(phys_addr.get_mut())
 }

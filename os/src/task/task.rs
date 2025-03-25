@@ -1,6 +1,6 @@
 //! Types related to task management
 use super::TaskContext;
-use crate::config::TRAP_CONTEXT_BASE;
+use crate::config::{MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
 use crate::mm::{
     kernel_stack_position, MapPermission, MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE,
 };
@@ -28,6 +28,9 @@ pub struct TaskControlBlock {
 
     /// Program break
     pub program_brk: usize,
+
+    /// sys_call_counter
+    pub sys_call_counter: [isize; MAX_SYSCALL_NUM],
 }
 
 impl TaskControlBlock {
@@ -35,10 +38,34 @@ impl TaskControlBlock {
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
         self.trap_cx_ppn.get_mut()
     }
+
     /// get the user token
     pub fn get_user_token(&self) -> usize {
         self.memory_set.token()
     }
+
+    /// munmap
+    pub fn munmap(&mut self, start: usize, len: usize) -> isize {
+        let result = self.memory_set.munmap(start, len);
+        if result.is_ok() {
+            0
+        } else {
+            println!("result:{:?}", result);
+            -1
+        }
+    }
+
+    /// mmp
+    pub fn mmp(&mut self, start: usize, len: usize, prot: usize) -> isize {
+        let result = self.memory_set.mmap(start, len, prot);
+        if result.is_ok() {
+            0
+        } else {
+            println!("result:{:?}", result);
+            -1
+        }
+    }
+
     /// Based on the elf info in program, build the contents of task in a new address space
     pub fn new(elf_data: &[u8], app_id: usize) -> Self {
         // memory_set with elf program headers/trampoline/trap context/user stack
@@ -57,6 +84,7 @@ impl TaskControlBlock {
         );
         let task_control_block = Self {
             task_status,
+            sys_call_counter: [0; MAX_SYSCALL_NUM],
             task_cx: TaskContext::goto_trap_return(kernel_stack_top),
             memory_set,
             trap_cx_ppn,
