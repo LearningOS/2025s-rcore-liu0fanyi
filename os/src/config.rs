@@ -17,6 +17,8 @@ pub const PAGE_SIZE_BITS: usize = 0xc;
 pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1;
 /// the virtual addr of trap context
 pub const TRAP_CONTEXT_BASE: usize = TRAMPOLINE - PAGE_SIZE;
+/// A large constant used in stride scheduling
+pub const BIG_STRIDE: u8 = u8::MAX;
 /// clock frequency
 pub const CLOCK_FREQ: usize = 12500000;
 /// the physical memory end
