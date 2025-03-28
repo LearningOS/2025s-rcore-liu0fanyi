@@ -10,6 +10,7 @@ use spin::{Mutex, MutexGuard};
 pub struct Inode {
     block_id: usize,
     block_offset: usize,
+    inode_id: u32,
     fs: Arc<Mutex<EasyFileSystem>>,
     block_device: Arc<dyn BlockDevice>,
 }
@@ -19,16 +20,34 @@ impl Inode {
     pub fn new(
         block_id: u32,
         block_offset: usize,
+        inode_id: u32,
         fs: Arc<Mutex<EasyFileSystem>>,
         block_device: Arc<dyn BlockDevice>,
     ) -> Self {
         Self {
             block_id: block_id as usize,
             block_offset,
+            inode_id,
             fs,
             block_device,
         }
     }
+
+    /// get nlinks default 1
+    pub fn get_nlinks(&self) -> u32 {
+        self.read_disk_inode(|disk_inode| disk_inode.nlinks)
+    }
+
+    /// Whether this inode is a directory
+    pub fn is_dir(&self) -> bool {
+        self.read_disk_inode(|di| di.is_dir())
+    }
+
+    /// Node Id
+    pub fn get_id(&self) -> u32 {
+        self.inode_id
+    }
+
     /// Call a function over a disk inode to read it
     fn read_disk_inode<V>(&self, f: impl FnOnce(&DiskInode) -> V) -> V {
         get_block_cache(self.block_id, Arc::clone(&self.block_device))
@@ -67,6 +86,7 @@ impl Inode {
                 Arc::new(Self::new(
                     block_id,
                     block_offset,
+                    inode_id,
                     self.fs.clone(),
                     self.block_device.clone(),
                 ))
@@ -133,6 +153,7 @@ impl Inode {
         Some(Arc::new(Self::new(
             block_id,
             block_offset,
+            new_inode_id,
             self.fs.clone(),
             self.block_device.clone(),
         )))
@@ -182,5 +203,77 @@ impl Inode {
             }
         });
         block_cache_sync_all();
+    }
+
+    /// 创建硬链接
+    pub fn create_link(&self, inode: &Inode, new_name: &str) -> bool {
+        let mut fs = self.fs.lock();
+
+        let target_inode_id = inode.inode_id;
+
+        // 修改disk_inode
+        self.modify_disk_inode(|root_inode| {
+            // 添加新dirent, 与create里的操作一样
+            let file_count = (root_inode.size as usize) / DIRENT_SZ;
+            let new_size = (file_count + 1) * DIRENT_SZ;
+
+            self.increase_size(new_size as u32, root_inode, &mut fs);
+
+            // 使用相同的inode_id和新的名字生成DirEntry
+            let dirent = DirEntry::new(new_name, target_inode_id);
+            root_inode.write_at(
+                file_count * DIRENT_SZ,
+                dirent.as_bytes(),
+                &self.block_device,
+            );
+        });
+        inode.modify_disk_inode(|disk_inode| {
+            disk_inode.nlinks += 1;
+        });
+        true
+    }
+
+    // ch2b_hello_world
+
+    /// 删除链接
+    pub fn unlink(&self) -> bool {
+        let should_dealloc = self.modify_disk_inode(|disk_inode| {
+            disk_inode.nlinks -= 1;
+            disk_inode.nlinks == 0
+        });
+
+        if should_dealloc {
+            let mut fs = self.fs.lock();
+            self.modify_disk_inode(|disk_inode| {
+                let size = disk_inode.size;
+                let data_blocks_dealloc = disk_inode.clear_size(&self.block_device);
+                assert!(data_blocks_dealloc.len() == DiskInode::total_blocks(size) as usize);
+                for data_block in data_blocks_dealloc.into_iter() {
+                    fs.dealloc_data(data_block);
+                }
+            });
+            fs.dealloc_inode(self.inode_id);
+        }
+        true
+    }
+
+    /// 从父目录移除目录项
+    pub fn remove_dirent(&self, name: &str) {
+        self.modify_disk_inode(|disk_inode| {
+            // let inode_id = self.find_inode_id(name, disk_inode).unwrap();
+
+            let file_count = (disk_inode.size as usize) / DIRENT_SZ;
+            let mut dirent = DirEntry::empty();
+
+            // 查找目标条目
+            for i in 0..file_count {
+                disk_inode.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device);
+                if dirent.name() == name {
+                    let empty = DirEntry::empty();
+
+                    disk_inode.write_at(i * DIRENT_SZ, empty.as_bytes(), &self.block_device);
+                }
+            }
+        });
     }
 }

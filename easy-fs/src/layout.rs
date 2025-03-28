@@ -82,6 +82,7 @@ type DataBlock = [u8; BLOCK_SZ];
 #[repr(C)]
 pub struct DiskInode {
     pub size: u32,
+    pub nlinks: u32,
     pub direct: [u32; INODE_DIRECT_COUNT],
     pub indirect1: u32,
     pub indirect2: u32,
@@ -96,6 +97,7 @@ impl DiskInode {
         self.direct.iter_mut().for_each(|v| *v = 0);
         self.indirect1 = 0;
         self.indirect2 = 0;
+        self.nlinks = 1;
         self.type_ = type_;
     }
     /// Whether this inode is a directory
