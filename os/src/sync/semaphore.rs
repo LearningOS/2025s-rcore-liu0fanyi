@@ -45,6 +45,7 @@ impl Semaphore {
     pub fn down(&self) {
         trace!("kernel: Semaphore::down");
         let mut inner = self.inner.exclusive_access();
+        info!("count:{}", inner.count);
         inner.count -= 1;
         if inner.count < 0 {
             inner.wait_queue.push_back(current_task().unwrap());

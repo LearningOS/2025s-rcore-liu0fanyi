@@ -58,6 +58,11 @@ impl PageTableEntry {
     pub fn writable(&self) -> bool {
         (self.flags() & PTEFlags::W) != PTEFlags::empty()
     }
+
+    /// The page pointered by page table entry is user?
+    pub fn is_user(&self) -> bool {
+        (self.flags() & PTEFlags::U) != PTEFlags::empty()
+    }
     /// The page pointered by page table entry is executable?
     pub fn executable(&self) -> bool {
         (self.flags() & PTEFlags::X) != PTEFlags::empty()
@@ -215,6 +220,32 @@ pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
         .translate_va(VirtAddr::from(va))
         .unwrap()
         .get_mut()
+}
+
+/// Translate const u8 to
+pub fn translated_single<T>(token: usize, ptr: usize, rd: usize) -> Option<&'static mut T> {
+    let page_table = PageTable::from_token(token);
+
+    let va = VirtAddr::from(ptr as usize);
+    let vpn = va.floor();
+    let Some(pte) = page_table.translate(vpn) else {
+        return None;
+    };
+
+    if !pte.is_valid()
+        || !pte.is_user()
+        || (rd == 0 && (!pte.readable()))
+        || (rd == 1 && (!pte.writable()))
+    {
+        return None;
+    }
+
+    let ppn = pte.ppn();
+    // vpn.step();
+
+    let phys_addr = PhysAddr::from(PhysAddr::from(ppn).0 + va.page_offset());
+
+    Some(phys_addr.get_mut())
 }
 
 /// An abstraction over a buffer passed from user space to kernel space
