@@ -11,13 +11,13 @@ pub use mutex::{Mutex, MutexBlocking, MutexSpin};
 pub use semaphore::Semaphore;
 pub use up::UPSafeCell;
 
-use lazy_static::*;
+// use lazy_static::*;
 
-lazy_static! {
-    /// sync/resource_manager.rs
-    pub static ref RES_MANAGER: UPSafeCell<ResourceManager> =
-        unsafe { UPSafeCell::new(ResourceManager::new()) };
-}
+// lazy_static! {
+//     /// sync/resource_manager.rs
+//     pub static ref RES_MANAGER: UPSafeCell<ResourceManager> =
+//         unsafe { UPSafeCell::new(ResourceManager::new()) };
+// }
 
 /// ResType
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

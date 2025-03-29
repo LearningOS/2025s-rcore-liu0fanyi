@@ -1,13 +1,14 @@
-use crate::sync::{Condvar, Mutex, MutexBlocking, MutexSpin, Semaphore, RES_MANAGER};
+use crate::sync::{Condvar, Mutex, MutexBlocking, MutexSpin, Semaphore};
 use crate::task::{block_current_and_run_next, current_process, current_task};
 use crate::timer::{add_timer, get_time_ms};
 use alloc::sync::Arc;
 
 macro_rules! with_deadlock_detect {
-    ($res_mgr:ident, $code:block) => {{
-        // if GLOBAL_DETECT_FLAG.load(core::sync::atomic::Ordering::Relaxed) {
-        let mut $res_mgr = RES_MANAGER.exclusive_access();
-        $code
+    ($process :ident, $res_mgr :ident, $code:block) => {{
+        if $process.is_deadlock_detect {
+            let mut $res_mgr = $process.res_manager.exclusive_access();
+            $code
+        }
     }};
 }
 
@@ -68,12 +69,12 @@ pub fn sys_mutex_create(blocking: bool) -> isize {
         process_inner.mutex_list.len() as isize - 1
     };
 
-    if process_inner.is_deadlock_detect {
-        with_deadlock_detect! {res_mgr,{
-            // info!("mutex create:id:{}, tid:{}", id, tid);
-            res_mgr.add_resource(id as usize, tid, crate::sync::ResType::Mutex, 1);
-        }};
-    }
+    // if process_inner.is_deadlock_detect {
+    with_deadlock_detect! {process_inner, res_mgr, {
+        // info!("mutex create:id:{}, tid:{}", id, tid);
+        res_mgr.add_resource(id as usize, tid, crate::sync::ResType::Mutex, 1);
+    }};
+    // }
     id
 }
 
@@ -98,18 +99,19 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
         tid,
     );
 
-    if process_inner.is_deadlock_detect {
-        with_deadlock_detect! {res_mgr,{
-            // info!("mutex lock tid:{}, mutex_id: {}", tid, mutex_id);
-            res_mgr.need[tid][mutex_id] += 1;
+    // if process_inner.is_deadlock_detect {
+    with_deadlock_detect! {process_inner, res_mgr, {
+    // with_deadlock_detect! {res_mgr,{
+        // info!("mutex lock tid:{}, mutex_id: {}", tid, mutex_id);
+        res_mgr.need[tid][mutex_id] += 1;
 
-            if !res_mgr.is_safe(tid, mutex_id) {
-                // info!("unsafe :tid: {}, mutex_id: {}", tid, mutex_id);
-                res_mgr.need[tid][mutex_id] -= 1;
-                return -0xDEAD;
-            }
-        }};
-    }
+        if !res_mgr.is_safe(tid, mutex_id) {
+            // info!("unsafe :tid: {}, mutex_id: {}", tid, mutex_id);
+            res_mgr.need[tid][mutex_id] -= 1;
+            return -0xDEAD;
+        }
+    }};
+    // }
 
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
     drop(process_inner);
@@ -119,13 +121,11 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
 
-    if process_inner.is_deadlock_detect {
-        with_deadlock_detect! {res_mgr,{
-            res_mgr.allocation[tid][mutex_id] += 1;
-            res_mgr.need[tid][mutex_id] -= 1;
-            res_mgr.available[mutex_id] -= 1;
-        }};
-    }
+    with_deadlock_detect! {process_inner, res_mgr, {
+        res_mgr.allocation[tid][mutex_id] += 1;
+        res_mgr.need[tid][mutex_id] -= 1;
+        res_mgr.available[mutex_id] -= 1;
+    }};
 
     0
 }
@@ -154,12 +154,10 @@ pub fn sys_mutex_unlock(mutex_id: usize) -> isize {
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
 
-    if process_inner.is_deadlock_detect {
-        with_deadlock_detect! {res_mgr,{
-            res_mgr.allocation[tid][mutex_id] -= 1;
-            res_mgr.available[mutex_id] += 1;
-        }};
-    }
+    with_deadlock_detect! {process_inner, res_mgr, {
+        res_mgr.allocation[tid][mutex_id] -= 1;
+        res_mgr.available[mutex_id] += 1;
+    }};
 
     0
 }
@@ -196,12 +194,10 @@ pub fn sys_semaphore_create(res_count: usize) -> isize {
         process_inner.semaphore_list.len() - 1
     };
 
-    if process_inner.is_deadlock_detect {
-        with_deadlock_detect! {res_mgr,{
-            // info!("add Semaphore resource:id:{}-tid:{}", id, tid);
-            res_mgr.add_resource(id as usize, tid, crate::sync::ResType::Semaphore, res_count);
-        }};
-    }
+    with_deadlock_detect! {process_inner, res_mgr, {
+        // info!("add Semaphore resource:id:{}-tid:{}", id, tid);
+        res_mgr.add_resource(id as usize, tid, crate::sync::ResType::Semaphore, res_count);
+    }};
 
     id as isize
 }
@@ -230,13 +226,11 @@ pub fn sys_semaphore_up(sem_id: usize) -> isize {
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
 
-    if process_inner.is_deadlock_detect {
-        with_deadlock_detect! {res_mgr,{
-            // info!("up: tid:{}, sem_id:{}, allocation:{:?}", tid, sem_id, res_mgr.allocation);
-            res_mgr.allocation[tid][sem_id] -= 1;
-            res_mgr.available[sem_id] += 1;
-        }};
-    }
+    with_deadlock_detect! {process_inner, res_mgr, {
+        // info!("up: tid:{}, sem_id:{}, allocation:{:?}", tid, sem_id, res_mgr.allocation);
+        res_mgr.allocation[tid][sem_id] -= 1;
+        res_mgr.available[sem_id] += 1;
+    }};
     0
 }
 /// semaphore down syscall
@@ -257,18 +251,16 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
 
-    if process_inner.is_deadlock_detect {
-        with_deadlock_detect! {res_mgr,{
-            info!("sem down :sem_id: {}, tid: {}", sem_id, tid);
-            res_mgr.need[tid][sem_id] += 1;
+    with_deadlock_detect! {process_inner, res_mgr, {
+        info!("sem down :sem_id: {}, tid: {}", sem_id, tid);
+        res_mgr.need[tid][sem_id] += 1;
 
-            if !res_mgr.is_safe(tid, sem_id) {
-                // info!("sem down not safe ?tid: {}, sem_id: {}", tid, sem_id);
-                res_mgr.need[tid][sem_id] -= 1;
-                return -0xDEAD;
-            }
-        }};
-    }
+        if !res_mgr.is_safe(tid, sem_id) {
+            // info!("sem down not safe ?tid: {}, sem_id: {}", tid, sem_id);
+            res_mgr.need[tid][sem_id] -= 1;
+            return -0xDEAD;
+        }
+    }};
 
     let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());
     drop(process_inner);
@@ -279,13 +271,11 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
 
-    if process_inner.is_deadlock_detect {
-        with_deadlock_detect! {res_mgr,{
-            res_mgr.allocation[tid][sem_id] += 1;
-            res_mgr.available[sem_id] -= 1;
-            res_mgr.need[tid][sem_id] -= 1;
-        }};
-    }
+    with_deadlock_detect! {process_inner, res_mgr, {
+        res_mgr.allocation[tid][sem_id] += 1;
+        res_mgr.available[sem_id] -= 1;
+        res_mgr.need[tid][sem_id] -= 1;
+    }};
     // info!("!!!!-down done2?:sem_id{},tid:{}", sem_id, tid);
 
     0
