@@ -27,6 +27,8 @@ pub struct ProcessControlBlock {
 pub struct ProcessControlBlockInner {
     /// is zombie?
     pub is_zombie: bool,
+    /// deadlock_detect
+    pub is_deadlock_detect: bool,
     /// memory set(address space)
     pub memory_set: MemorySet,
     /// parent process
@@ -101,6 +103,7 @@ impl ProcessControlBlock {
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
                     is_zombie: false,
+                    is_deadlock_detect: false,
                     memory_set,
                     parent: None,
                     children: Vec::new(),
@@ -245,6 +248,7 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    is_deadlock_detect: false,
                 })
             },
         });

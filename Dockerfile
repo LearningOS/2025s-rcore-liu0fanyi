@@ -6,6 +6,9 @@
 # - Extensive comments linking to relevant documentation
 FROM ubuntu:20.04
 
+ENV https_proxy=http://192.168.1.100:7890
+ENV http_proxy=http://192.168.1.100:7890
+
 ARG QEMU_VERSION=7.0.0
 ARG HOME=/root
 
