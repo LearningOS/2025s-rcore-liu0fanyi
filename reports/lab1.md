@@ -1,22 +1,21 @@
 # 简单总结你实现的功能（200字以内，不要贴代码）。
 * 添加要求的sys_call trace的读/写/计数功能
-* 在taskmanager里添加一个sys_call_counter数组用于计数
+* 在TaskControlBlock里添加一个syscall_counter数组用于计数
 * 数组的index用已有的sys_call的id % 11
-* 进入next task之前，清空sys_call_counter
-* 添加plus和读取sys_call_counter的接口
+* 添加plus和读取syscall_counter的接口
 * 在os的syscall里，plus计数
 
 # 完成问答题。
 1. 正确进入 U 态后，程序的特征还应有：使用 S 态特权指令，访问 S 态寄存器后会报错。 请同学们可以自行测试这些内容（运行 三个 bad 测例 (ch2b_bad_*.rs) ）， 描述程序出错行为，同时注意注明你使用的 sbi 及其版本。
+  * sbi Version 0.2.0-alpha.2
   * ch2b_bad_address，显示PageFault in application, 错误地址和错误指令
   * ch2b_bad_instructions 是非法instruction
   * ch2b_bad_register 是非法instruction
-  * sbi Version 0.2.0-alpha.2
 2.
   1. L40：刚进入 __restore 时，sp 代表了什么值。请指出 __restore 的两种使用情景。
     * 刚进入_restore的时候，sp是S stack栈顶
     * 用于sys_call后trap结束从S恢复到U
-    * 切换不同的task时用来启动app
+    * 用于切换不同的task时启动app
   2. L43-L48：这几行汇编代码特殊处理了哪些寄存器？这些寄存器的的值对于进入用户态有何意义？请分别解释。  
     * 特殊处理了sscratch, sstatus, sepc
     * sscratch保存了U的sp

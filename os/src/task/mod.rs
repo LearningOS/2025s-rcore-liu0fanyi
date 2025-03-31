@@ -45,7 +45,7 @@ pub struct TaskManagerInner {
     tasks: [TaskControlBlock; MAX_APP_NUM],
     /// id of current `Running` task
     current_task: usize,
-    sys_count_count: [isize; MAX_SYSCALL_NUM],
+    // sys_count_count: [isize; MAX_SYSCALL_NUM],
 }
 
 lazy_static! {
@@ -55,6 +55,7 @@ lazy_static! {
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
+            syscall_counter: [0; MAX_SYSCALL_NUM],
         }; MAX_APP_NUM];
         for (i, task) in tasks.iter_mut().enumerate() {
             task.task_cx = TaskContext::goto_restore(init_app_cx(i));
@@ -66,7 +67,7 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
-                    sys_count_count: [0;MAX_SYSCALL_NUM],
+                    // sys_count_count: [0;MAX_SYSCALL_NUM],
                 })
             },
         }
@@ -94,12 +95,14 @@ impl TaskManager {
 
     fn read_sys_call_counter(&self, id: usize) -> isize {
         let inner = self.inner.exclusive_access();
-        inner.sys_count_count[id % SYSCALL_HASH]
+        let current = inner.current_task;
+        inner.tasks[current].syscall_counter[id % SYSCALL_HASH]
     }
 
     fn plus_sys_call_counter(&self, id: usize) {
         let mut inner = self.inner.exclusive_access();
-        inner.sys_count_count[id % SYSCALL_HASH] += 1;
+        let current = inner.current_task;
+        inner.tasks[current].syscall_counter[id % SYSCALL_HASH] += 1;
     }
 
     /// Change the status of current `Running` task into `Ready`.
@@ -138,7 +141,7 @@ impl TaskManager {
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
 
-            inner.sys_count_count = [0; MAX_SYSCALL_NUM];
+            // inner.sys_count_count = [0; MAX_SYSCALL_NUM];
 
             drop(inner);
             // before this, we should drop local variables that must be dropped manually
