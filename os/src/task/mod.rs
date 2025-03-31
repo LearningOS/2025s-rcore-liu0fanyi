@@ -14,7 +14,7 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM, SYSCALL_HASH};
+use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM};
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
 use lazy_static::*;
@@ -96,13 +96,13 @@ impl TaskManager {
     fn read_sys_call_counter(&self, id: usize) -> isize {
         let inner = self.inner.exclusive_access();
         let current = inner.current_task;
-        inner.tasks[current].syscall_counter[id % SYSCALL_HASH]
+        inner.tasks[current].syscall_counter[id]
     }
 
     fn plus_sys_call_counter(&self, id: usize) {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
-        inner.tasks[current].syscall_counter[id % SYSCALL_HASH] += 1;
+        inner.tasks[current].syscall_counter[id] += 1;
     }
 
     /// Change the status of current `Running` task into `Ready`.
@@ -136,12 +136,18 @@ impl TaskManager {
         if let Some(next) = self.find_next_task() {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
+
             inner.tasks[next].task_status = TaskStatus::Running;
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
 
-            // inner.sys_count_count = [0; MAX_SYSCALL_NUM];
+            // println!(
+            //     "current:{}, next:{} why?:{:?}",
+            //     backup, next, inner.tasks[next].syscall_counter
+            // );
+
+            // inner.tasks[next].syscall_counter = [0; MAX_SYSCALL_NUM];
 
             drop(inner);
             // before this, we should drop local variables that must be dropped manually

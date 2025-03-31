@@ -1,7 +1,7 @@
 # 简单总结你实现的功能（200字以内，不要贴代码）。
 * 添加要求的sys_call trace的读/写/计数功能
 * 在TaskControlBlock里添加一个syscall_counter数组用于计数
-* 数组的index用已有的sys_call的id % 11
+* 数组的index用已有的sys_call的id
 * 添加plus和读取syscall_counter的接口
 * 在os的syscall里，plus计数
 
